@@ -42,6 +42,21 @@ export interface LanaUsage {
   context_window: number;
 }
 
+export interface LanaSource {
+  index: number;
+  url: string;
+  title: string;
+  snippet: string;
+}
+
+export interface LanaDocument {
+  tool_use_id?: string;
+  filename: string;
+  format: string;
+  content: string;
+  description?: string;
+}
+
 export interface LanaResponse {
   id: string;
   type: "message";
@@ -49,9 +64,19 @@ export interface LanaResponse {
   model: string;
   content: LanaContentBlock[];
   stop_reason: string;
-  usage: LanaUsage;
+  usage?: LanaUsage;
   follow_up?: string[];
-  sources?: Array<{ index: number; url: string; title: string; snippet: string }>;
+  sources?: LanaSource[];
+  documents?: LanaDocument[];
+  ui_schema?: unknown;
+}
+
+export interface LanaTurnResult {
+  text: string;
+  followUps: string[];
+  sources: LanaSource[];
+  documents: LanaDocument[];
+  uiSchema?: unknown;
 }
 
 export interface LanaErrorEnvelope {
@@ -66,4 +91,12 @@ export interface LanaHealthResponse {
   status: string;
   uptime: number;
   timestamp: string;
+}
+
+export interface ChatCallOptions {
+  wallet?: string;
+  timeZone?: string;
+  deepScan?: boolean;
+  stream?: boolean;
+  onDelta?: (text: string) => Promise<void> | void;
 }

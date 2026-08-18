@@ -1,4 +1,6 @@
 import type { AddressProfile } from "../types";
+import type { LanaSource, LanaTurnResult } from "../lana/types";
+import { InlineKeyboard } from "grammy";
 
 export function splitTelegramMessage(text: string, maxLen = 3900): string[] {
   if (text.length <= maxLen) {
@@ -72,4 +74,54 @@ export function formatTxExplanation(summary: string, tokenMovements: string[], r
     `<b>Risk Notes</b>`,
     risks
   ].join("\n");
+}
+
+export function formatChatHtml(result: LanaTurnResult): string {
+  const body = applyCitations(escapeHtml(result.text), result.sources);
+  const sources = formatSources(result.sources);
+  return [body, sources].filter(Boolean).join("\n\n");
+}
+
+export function applyCitations(escapedText: string, sources: LanaSource[]): string {
+  return escapedText.replace(/\{\{cite:(\d+)\}\}/g, (_match, indexRaw: string) => {
+    const index = Number(indexRaw);
+    const source = sources.find((item) => item.index === index);
+    const label = `[${index + 1}]`;
+    if (!source?.url) {
+      return label;
+    }
+    return `<a href="${escapeHtml(source.url)}">${label}</a>`;
+  });
+}
+
+export function formatSources(sources: LanaSource[]): string {
+  if (sources.length === 0) {
+    return "";
+  }
+  const lines = sources
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .map((source) => {
+      const title = escapeHtml(source.title || source.url);
+      return `${source.index + 1}. <a href="${escapeHtml(source.url)}">${title}</a>`;
+    });
+  return `<b>Sources</b>\n${lines.join("\n")}`;
+}
+
+export function followUpKeyboard(suggestions: string[]): InlineKeyboard | undefined {
+  const items = suggestions.filter(Boolean).slice(0, 4);
+  if (items.length === 0) {
+    return undefined;
+  }
+  const keyboard = new InlineKeyboard();
+  for (const [index, suggestion] of items.entries()) {
+    const label = suggestion.length > 42 ? `${suggestion.slice(0, 39)}…` : suggestion;
+    keyboard.text(label, `fu:${index}`).row();
+  }
+  return keyboard;
+}
+
+export function safeFilename(name: string): string {
+  const base = name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
+  return base || "lana-export.txt";
 }

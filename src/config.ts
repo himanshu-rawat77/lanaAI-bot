@@ -14,8 +14,13 @@ const ConfigSchema = z.object({
     .default("false")
     .transform((v) => v === "true"),
   LANA_NETWORK: z.enum(["mainnet", "devnet"]).default("mainnet"),
-  LANA_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  LANA_TIMEOUT_MS: z.coerce.number().int().positive().default(180000),
   LANA_RETRY_ATTEMPTS: z.coerce.number().int().min(0).max(5).default(2),
+  LANA_STREAM: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  LANA_TIMEZONE: z.string().min(1).max(64).default("UTC"),
   SESSION_HISTORY_LIMIT: z.coerce.number().int().min(3).max(20).default(8),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(20)

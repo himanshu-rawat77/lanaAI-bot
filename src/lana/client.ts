@@ -8,27 +8,21 @@ import {
   txExplanationPrompt
 } from "./prompts";
 import type { ChatTurn } from "../types";
+import { LanaApiError } from "./errors";
+import { readLanaSseStream, turnResultFromMessage } from "./stream";
 import type {
+  ChatCallOptions,
   LanaErrorEnvelope,
   LanaExtensions,
   LanaHealthResponse,
   LanaMessage,
   LanaModel,
   LanaRequest,
-  LanaResponse
+  LanaResponse,
+  LanaTurnResult
 } from "./types";
 
-export class LanaApiError extends Error {
-  constructor(
-    message: string,
-    readonly type: string,
-    readonly status: number,
-    readonly retryAfterSec?: number
-  ) {
-    super(message);
-    this.name = "LanaApiError";
-  }
-}
+export { LanaApiError } from "./errors";
 
 export class LanaClient {
   private readonly baseUrl: string;
@@ -46,7 +40,7 @@ export class LanaClient {
   }
 
   async getAddressProfile(address: string) {
-    const text = await this.sendMessage({
+    const result = await this.complete({
       model: config.LANA_MODEL_THINKING,
       max_tokens: config.LANA_MAX_TOKENS,
       system: ADDRESS_PROFILE_SYSTEM,
@@ -56,44 +50,45 @@ export class LanaClient {
       }
     });
 
-    const json = this.extractJson(text);
+    const json = this.extractJson(result.text);
     return AddressProfileResponseSchema.parse(json);
   }
 
   async explainTransaction(signature: string) {
-    const text = await this.sendMessage({
+    const result = await this.complete({
       model: config.LANA_MODEL_THINKING,
       max_tokens: config.LANA_MAX_TOKENS,
       system: TX_EXPLANATION_SYSTEM,
       messages: [{ role: "user", content: txExplanationPrompt(signature) }]
     });
 
-    const json = this.extractJson(text);
+    const json = this.extractJson(result.text);
     return TxExplanationSchema.parse(json);
   }
 
-  async chat(question: string, history: ChatTurn[], options?: { wallet?: string }) {
+  async chat(
+    question: string,
+    history: ChatTurn[],
+    options: ChatCallOptions = {}
+  ): Promise<LanaTurnResult> {
     const messages = this.toLanaMessages(history, question);
-    const extensions: LanaExtensions = {};
-    if (options?.wallet) {
-      extensions.user_context = {
-        wallet: options.wallet,
-        address_kind: "wallet",
-        network: config.LANA_NETWORK
-      };
-    }
-
-    return this.sendMessage({
-      model: config.LANA_MODEL_THINKING,
-      max_tokens: config.LANA_MAX_TOKENS,
-      system: CHAT_SYSTEM,
-      messages,
-      extensions: Object.keys(extensions).length > 0 ? extensions : undefined
-    });
+    return this.complete(
+      {
+        model: config.LANA_MODEL_THINKING,
+        max_tokens: config.LANA_MAX_TOKENS,
+        system: CHAT_SYSTEM,
+        messages,
+        extensions: this.chatExtensions(options)
+      },
+      {
+        stream: options.stream ?? config.LANA_STREAM,
+        onDelta: options.onDelta
+      }
+    );
   }
 
   async analyze(prompt: string, options?: { deepScan?: boolean; model?: LanaModel }) {
-    return this.sendMessage({
+    const result = await this.complete({
       model: options?.model ?? config.LANA_MODEL_THINKING,
       max_tokens: config.LANA_MAX_TOKENS,
       system: CHAT_SYSTEM,
@@ -102,6 +97,26 @@ export class LanaClient {
         enable_deep_scan: options?.deepScan ?? false
       }
     });
+    return result.text;
+  }
+
+  private chatExtensions(options: ChatCallOptions): LanaExtensions {
+    const userContext: LanaExtensions["user_context"] = {
+      time_zone: options.timeZone ?? config.LANA_TIMEZONE,
+      network: config.LANA_NETWORK
+    };
+    if (options.wallet) {
+      userContext.wallet = options.wallet;
+      userContext.address_kind = "wallet";
+    }
+
+    return {
+      include_ui_schema: true,
+      include_followups: true,
+      include_documents: true,
+      enable_deep_scan: options.deepScan ?? false,
+      user_context: userContext
+    };
   }
 
   private toLanaMessages(history: ChatTurn[], question: string): LanaMessage[] {
@@ -115,13 +130,19 @@ export class LanaClient {
     return [...prior, { role: "user", content: question }];
   }
 
-  private async sendMessage(request: LanaRequest): Promise<string> {
+  private async complete(
+    request: LanaRequest,
+    runtime?: { stream?: boolean; onDelta?: (text: string) => Promise<void> | void }
+  ): Promise<LanaTurnResult> {
     const attempts = config.LANA_RETRY_ATTEMPTS + 1;
     let lastError: unknown;
+    const stream = runtime?.stream ?? false;
 
     for (let i = 0; i < attempts; i += 1) {
       try {
-        return await this.postMessage(request);
+        return stream
+          ? await this.postStream(request, runtime?.onDelta)
+          : await this.postJson(request);
       } catch (error) {
         lastError = error;
         if (error instanceof LanaApiError && error.status === 429 && error.retryAfterSec) {
@@ -140,7 +161,29 @@ export class LanaClient {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
-  private async postMessage(request: LanaRequest): Promise<string> {
+  private async postJson(request: LanaRequest): Promise<LanaTurnResult> {
+    const response = await this.fetchLana({ ...request, stream: false });
+    const payload = (await response.json()) as LanaResponse;
+    const result = turnResultFromMessage(payload);
+    if (!result.text && !result.uiSchema && result.documents.length === 0) {
+      throw new Error("Lana returned an empty response.");
+    }
+    return result;
+  }
+
+  private async postStream(
+    request: LanaRequest,
+    onDelta?: (text: string) => Promise<void> | void
+  ): Promise<LanaTurnResult> {
+    const response = await this.fetchLana({ ...request, stream: true });
+    const result = await readLanaSseStream(response, onDelta);
+    if (!result.text && !result.uiSchema && result.documents.length === 0) {
+      throw new Error("Lana returned an empty response.");
+    }
+    return result;
+  }
+
+  private async fetchLana(request: LanaRequest): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.LANA_TIMEOUT_MS);
 
@@ -151,7 +194,7 @@ export class LanaClient {
           "Content-Type": "application/json",
           "x-api-key": config.LANA_API_KEY
         },
-        body: JSON.stringify({ ...request, stream: false }),
+        body: JSON.stringify(request),
         signal: controller.signal
       });
 
@@ -168,25 +211,10 @@ export class LanaClient {
         );
       }
 
-      const payload = (await response.json()) as LanaResponse;
-      return this.extractText(payload);
+      return response;
     } finally {
       clearTimeout(timeout);
     }
-  }
-
-  private extractText(response: LanaResponse): string {
-    const text = response.content
-      .filter((block) => block.type === "text" && block.text)
-      .map((block) => block.text!)
-      .join("")
-      .trim();
-
-    if (!text) {
-      throw new Error("Lana returned an empty response.");
-    }
-
-    return text;
   }
 
   private extractJson(text: string): unknown {

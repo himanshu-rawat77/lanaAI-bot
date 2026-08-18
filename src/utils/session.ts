@@ -2,7 +2,8 @@ import type { BotSession, ChatTurn, ChatRole } from "../types";
 
 export const initialSession = (): BotSession => ({
   chatMode: true,
-  chatHistory: []
+  chatHistory: [],
+  pendingFollowUps: []
 });
 
 export function pushChatTurn(

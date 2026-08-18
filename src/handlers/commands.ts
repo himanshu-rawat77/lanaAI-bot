@@ -19,12 +19,12 @@ export function registerCommandHandlers(
       "<b>👋 Welcome to Lana Solana Bot</b>",
       "",
       "Ask me anything about Solana — wallets, tokens, prices, or on-chain activity.",
-      "No wallet required. Just type a question, like OrbAI.",
+      "No wallet required. Optional: <code>/connect &lt;address&gt;</code> so I can answer “my portfolio”.",
       "",
       "<b>Try</b>",
       "• What is the current price of SOL?",
       "• Who are the largest USDC holders?",
-      "• <code>/chat</code> then ask a follow-up",
+      "• <code>/connect &lt;wallet&gt;</code> then “How did I do this week?”",
       "• <code>/lookup &lt;address&gt;</code> for a reputation card",
       "• <code>/tx &lt;signature&gt;</code> to explain a transaction"
     ].join("\n");
@@ -91,7 +91,8 @@ export function registerCommandHandlers(
         "• How many holders does USDC have?",
         "• What did this program do last week?",
         "",
-        "You do not need to share a wallet. Send /stopchat to exit."
+        "You do not need to share a wallet. Optional: /connect &lt;address&gt;.",
+        "Send /stopchat to exit."
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -102,21 +103,60 @@ export function registerCommandHandlers(
     await ctx.reply("Chat mode disabled.");
   });
 
-  bot.command("portfolio", async (ctx) => {
+  bot.command("connect", async (ctx) => {
+    const address = ctx.match?.toString().trim();
+    if (!address || !looksLikeSolanaAddress(address)) {
+      await ctx.reply(
+        "Usage: /connect <solana_wallet_address>\nSaved only in this chat so Lana can answer “my balance” / “this week”."
+      );
+      return;
+    }
+    ctx.session.connectedWallet = address;
     ctx.session.chatMode = true;
     await ctx.reply(
-      "Ask me about any wallet in chat — for example: “What’s in JUP’s treasury?” You can also paste an address. /lookup still gives a reputation card."
+      `Connected <code>${escapeHtml(address)}</code>.\nAsk things like “What’s my SOL balance?” or “How did I do this week?”\n/disconnect to remove it.`,
+      { parse_mode: "HTML" }
+    );
+  });
+
+  bot.command("disconnect", async (ctx) => {
+    ctx.session.connectedWallet = undefined;
+    await ctx.reply("Wallet disconnected. Chat still works without one.");
+  });
+
+  bot.command("portfolio", async (ctx) => {
+    ctx.session.chatMode = true;
+    if (ctx.session.connectedWallet) {
+      await handleLanaChat(ctx, deps.lanaClient, "Summarize my portfolio and recent activity.");
+      return;
+    }
+    await ctx.reply(
+      "Connect a wallet first: /connect <solana_address>\nThen I can answer “my portfolio” using Lana user_context."
     );
   });
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
-      "Commands: /start, /lookup, /tx, /flow, /chat, /stopchat, /portfolio"
+      "Commands: /start, /chat, /connect, /disconnect, /lookup, /tx, /flow, /portfolio, /clear, /stopchat"
     );
   });
 
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
+
+    if (data.startsWith("fu:")) {
+      const index = Number(data.slice(3));
+      const question = (ctx.session.pendingFollowUps ?? [])[index];
+      await ctx.answerCallbackQuery();
+      if (!question) {
+        await ctx.reply("That follow-up expired. Ask a new question.");
+        return;
+      }
+      ctx.session.chatMode = true;
+      await handleLanaChat(ctx, deps.lanaClient, question);
+      return;
+    }
+
     if (!data.startsWith("flow:")) {
       await ctx.answerCallbackQuery();
       return;
@@ -124,9 +164,12 @@ export function registerCommandHandlers(
 
     const [, address, depthRaw] = data.split(":");
     const depth = Math.max(1, Math.min(4, Number(depthRaw ?? "2") || 2));
+    await ctx.answerCallbackQuery();
+    if (!address || !looksLikeSolanaAddress(address)) {
+      return;
+    }
     const response = await deps.lanaClient.analyze(fundFlowPrompt(address, depth));
     await ctx.reply(`<b>🌊 Fund Flow Summary</b>\n\n${escapeHtml(response)}`, { parse_mode: "HTML" });
-    await ctx.answerCallbackQuery();
   });
 
   bot.command("clear", async (ctx) => {

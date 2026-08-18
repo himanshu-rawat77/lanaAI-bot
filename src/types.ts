@@ -9,6 +9,9 @@ export interface ChatTurn {
 export interface BotSession {
   chatMode: boolean;
   chatHistory: ChatTurn[];
+  connectedWallet?: string;
+  timeZone?: string;
+  pendingFollowUps: string[];
 }
 
 export interface AddressProfile {

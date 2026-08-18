@@ -8,7 +8,9 @@ Production-focused Telegram bot powered by the [Lana API](https://orbmarkets.io/
 - `/lookup <address>` Truecaller-style wallet profile (star feature)
 - `/tx <signature>` transaction explanation
 - `/flow <address> [depth]` fund flow summary
-- `/chat` and `/stopchat` for free-form analyst mode with memory
+- `/chat` free-form Lana chat (streaming, follow-up buttons, citations)
+- `/connect <wallet>` saves `user_context` for “my portfolio” questions
+- UI-schema rendered as HTML cards; CSV/JSON/TXT sent as files
 - Inline mode support for any Telegram chat
 - In-memory rate limiting and session memory
 
@@ -53,7 +55,8 @@ npm run dev
 | `LANA_MODEL_THINKING` | `lana-thinking` | Multi-step analysis (address profiles, tx) |
 | `LANA_MAX_TOKENS` | `4096` | Max output tokens per request |
 | `LANA_ENABLE_DEEP_SCAN` | `false` | Full archival history scans (expensive) |
-| `LANA_NETWORK` | `mainnet` | `mainnet` or `devnet` |
+| `LANA_STREAM` | `true` | Stream answers and edit the Telegram message live |
+| `LANA_TIMEZONE` | `UTC` | IANA timezone sent as `user_context.time_zone` |
 
 Set `LANA_ENABLE_DEEP_SCAN=true` only when you need full-history analysis (up to 10k txs per scan).
 
