@@ -1,4 +1,4 @@
-import { InputFile } from "grammy";
+import { GrammyError, InputFile } from "grammy";
 import type { Context } from "grammy";
 import type { BotSession } from "../types";
 import { config } from "../config";
@@ -51,18 +51,14 @@ export async function handleLanaChat(
           return;
         }
         lastShown = snippet;
-        try {
-          await ctx.api.editMessageText(chatId, messageId, snippet);
-        } catch {
-          // Telegram flood control or unchanged content — ignore mid-stream.
-        }
+        await safeEditMessageText(ctx, chatId, messageId, snippet);
       }
     });
   } catch (error) {
-    try {
-      await ctx.api.editMessageText(chatId, messageId, formatLanaError(error));
-    } catch {
-      await ctx.reply(formatLanaError(error));
+    const message = formatLanaError(error);
+    const edited = await safeEditMessageText(ctx, chatId, messageId, message);
+    if (!edited) {
+      await ctx.reply(message);
     }
     return;
   }
@@ -71,7 +67,7 @@ export async function handleLanaChat(
   pushChatTurn(ctx.session, "assistant", result.text || "(structured response)", config.SESSION_HISTORY_LIMIT);
   ctx.session.pendingFollowUps = result.followUps;
 
-  await finalizeAnswer(ctx, chatId, messageId, result);
+  await finalizeAnswer(ctx, chatId, messageId, result, lastShown);
   await sendUiCards(ctx, result);
   await sendDocuments(ctx, result.documents);
 }
@@ -80,22 +76,31 @@ async function finalizeAnswer(
   ctx: BotContext,
   chatId: number,
   messageId: number,
-  result: LanaTurnResult
+  result: LanaTurnResult,
+  lastShown: string
 ): Promise<void> {
   const keyboard = followUpKeyboard(result.followUps);
   const html = formatChatHtml(result) || "<i>Lana returned a structured result.</i>";
   const chunks = splitTelegramMessage(html);
+  const firstChunk = chunks[0] ?? html;
+  const markup = chunks.length === 1 ? keyboard : undefined;
+  const alreadyShown = firstChunk === lastShown && !markup;
 
-  try {
-    await ctx.api.editMessageText(chatId, messageId, chunks[0] ?? html, {
+  if (!alreadyShown) {
+    const edited = await safeEditMessageText(ctx, chatId, messageId, firstChunk, {
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
-      reply_markup: chunks.length === 1 ? keyboard : undefined
+      reply_markup: markup
     });
-  } catch {
-    await ctx.api.editMessageText(chatId, messageId, (result.text || "Done.").slice(0, 3900), {
-      reply_markup: chunks.length === 1 ? keyboard : undefined
-    });
+
+    if (!edited) {
+      const plain = (result.text || "Done.").slice(0, 3900);
+      if (plain !== lastShown || markup) {
+        await safeEditMessageText(ctx, chatId, messageId, plain, {
+          reply_markup: markup
+        });
+      }
+    }
   }
 
   const rest = chunks.slice(1);
@@ -129,5 +134,33 @@ async function sendDocuments(ctx: BotContext, documents: LanaDocument[]): Promis
     await ctx.replyWithDocument(new InputFile(Buffer.from(doc.content, "utf8"), filename), {
       caption
     });
+  }
+}
+
+function isMessageNotModified(error: unknown): boolean {
+  if (!(error instanceof GrammyError)) {
+    return String(error).includes("message is not modified");
+  }
+  return error.description.toLowerCase().includes("message is not modified");
+}
+
+async function safeEditMessageText(
+  ctx: BotContext,
+  chatId: number,
+  messageId: number,
+  text: string,
+  extra?: Parameters<BotContext["api"]["editMessageText"]>[3]
+): Promise<boolean> {
+  if (!text.trim()) {
+    return false;
+  }
+  try {
+    await ctx.api.editMessageText(chatId, messageId, text, extra);
+    return true;
+  } catch (error) {
+    if (isMessageNotModified(error)) {
+      return true;
+    }
+    return false;
   }
 }
