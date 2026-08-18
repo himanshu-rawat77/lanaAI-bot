@@ -84,7 +84,7 @@ export class LanaClient {
     }
 
     return this.sendMessage({
-      model: config.LANA_MODEL_FAST,
+      model: config.LANA_MODEL_THINKING,
       max_tokens: config.LANA_MAX_TOKENS,
       system: CHAT_SYSTEM,
       messages,

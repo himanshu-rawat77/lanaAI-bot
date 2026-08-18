@@ -17,7 +17,17 @@ export function createBot(): Bot<LanaBotContext> {
   const lanaClient = new LanaClient();
   const addressProfileService = new AddressProfileService(lanaClient);
 
-  bot.use(session({ initial: initialSession }));
+  bot.use(
+    session({
+      initial: initialSession,
+      getSessionKey: (ctx) => {
+        if (ctx.chat?.id == null || ctx.from?.id == null) {
+          return undefined;
+        }
+        return `${ctx.chat.id}:${ctx.from.id}`;
+      }
+    })
+  );
   const limiter = new InMemoryRateLimiter(
     config.RATE_LIMIT_MAX_REQUESTS,
     config.RATE_LIMIT_WINDOW_MS

@@ -1,12 +1,11 @@
 import { Bot, Context, InlineKeyboard } from "grammy";
-import { config } from "../config";
 import type { BotSession } from "../types";
 import { AddressProfileService } from "../services/address-profile";
 import { formatAddressProfile, formatTxExplanation, escapeHtml } from "../utils/format";
 import { looksLikeSolanaAddress } from "../utils/solana";
-import { pushChatTurn } from "../utils/session";
 import { LanaClient } from "../lana/client";
 import { fundFlowPrompt } from "../lana/prompts";
+import { handleLanaChat } from "./chat";
 
 type BotContext = Context & { session: BotSession };
 
@@ -15,18 +14,19 @@ export function registerCommandHandlers(
   deps: { addressProfileService: AddressProfileService; lanaClient: LanaClient }
 ): void {
   bot.command("start", async (ctx) => {
+    ctx.session.chatMode = true;
     const text = [
       "<b>👋 Welcome to Lana Solana Bot</b>",
       "",
-      "I can analyze Solana wallets, transactions, and money flow in plain English.",
+      "Ask me anything about Solana — wallets, tokens, prices, or on-chain activity.",
+      "No wallet required. Just type a question, like OrbAI.",
       "",
-      "<b>Examples</b>",
-      "• <code>/lookup &lt;wallet_address&gt;</code>",
-      "• <code>/tx &lt;transaction_signature&gt;</code>",
-      "• <code>/flow &lt;wallet_address&gt; 2</code>",
-      "• <code>/chat</code> to start AI analyst mode",
-      "",
-      "Paste an address directly and I will auto-analyze it."
+      "<b>Try</b>",
+      "• What is the current price of SOL?",
+      "• Who are the largest USDC holders?",
+      "• <code>/chat</code> then ask a follow-up",
+      "• <code>/lookup &lt;address&gt;</code> for a reputation card",
+      "• <code>/tx &lt;signature&gt;</code> to explain a transaction"
     ].join("\n");
 
     await ctx.reply(text, { parse_mode: "HTML" });
@@ -75,8 +75,25 @@ export function registerCommandHandlers(
 
   bot.command("chat", async (ctx) => {
     ctx.session.chatMode = true;
+    const question = ctx.match?.toString().trim();
+
+    if (question) {
+      await handleLanaChat(ctx, deps.lanaClient, question);
+      return;
+    }
+
     await ctx.reply(
-      "Chat mode enabled. Ask any Solana intelligence question.\nSend /stopchat to exit."
+      [
+        "<b>Lana chat is on</b> — ask anything about Solana.",
+        "",
+        "Examples:",
+        "• What is the current price of SOL?",
+        "• How many holders does USDC have?",
+        "• What did this program do last week?",
+        "",
+        "You do not need to share a wallet. Send /stopchat to exit."
+      ].join("\n"),
+      { parse_mode: "HTML" }
     );
   });
 
@@ -86,8 +103,9 @@ export function registerCommandHandlers(
   });
 
   bot.command("portfolio", async (ctx) => {
+    ctx.session.chatMode = true;
     await ctx.reply(
-      "Send your wallet address and I will generate a portfolio-style overview. Wallet connect support can be added next."
+      "Ask me about any wallet in chat — for example: “What’s in JUP’s treasury?” You can also paste an address. /lookup still gives a reputation card."
     );
   });
 
@@ -113,7 +131,6 @@ export function registerCommandHandlers(
 
   bot.command("clear", async (ctx) => {
     ctx.session.chatHistory = [];
-    pushChatTurn(ctx.session, "system", "Conversation reset", config.SESSION_HISTORY_LIMIT);
-    await ctx.reply("Cleared conversation context.");
+    await ctx.reply("Cleared conversation context. Ask another question anytime.");
   });
 }

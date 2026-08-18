@@ -4,8 +4,7 @@ import { LanaClient } from "../lana/client";
 import { AddressProfileService } from "../services/address-profile";
 import { formatAddressProfile } from "../utils/format";
 import { looksLikeSolanaAddress } from "../utils/solana";
-import { config } from "../config";
-import { pushChatTurn } from "../utils/session";
+import { handleLanaChat } from "./chat";
 
 type BotContext = Context & { session: BotSession };
 
@@ -15,8 +14,14 @@ export function registerMessageHandlers(
 ): void {
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text.trim();
-
     if (text.startsWith("/")) {
+      return;
+    }
+
+    const chatModeOn = ctx.session.chatMode;
+
+    if (chatModeOn) {
+      await handleLanaChat(ctx, deps.lanaClient, text);
       return;
     }
 
@@ -27,14 +32,6 @@ export function registerMessageHandlers(
       return;
     }
 
-    if (!ctx.session.chatMode) {
-      await ctx.reply("Use /chat for free-form analysis mode, or /lookup <address>.");
-      return;
-    }
-
-    const answer = await deps.lanaClient.chat(text, ctx.session.chatHistory);
-    pushChatTurn(ctx.session, "user", text, config.SESSION_HISTORY_LIMIT);
-    pushChatTurn(ctx.session, "assistant", answer, config.SESSION_HISTORY_LIMIT);
-    await ctx.reply(answer);
+    await ctx.reply("Send /chat to talk to Lana, or /lookup <address> for a reputation card.");
   });
 }

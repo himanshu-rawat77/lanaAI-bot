@@ -1,7 +1,7 @@
 import type { BotSession, ChatTurn, ChatRole } from "../types";
 
 export const initialSession = (): BotSession => ({
-  chatMode: false,
+  chatMode: true,
   chatHistory: []
 });
 
@@ -11,6 +11,10 @@ export function pushChatTurn(
   content: string,
   maxHistory: number
 ): void {
+  if (role === "system") {
+    return;
+  }
+
   const turn: ChatTurn = {
     role,
     content,
