@@ -34,6 +34,15 @@ const ConfigSchema = z.object({
 
 const parsed = ConfigSchema.parse(process.env);
 
+if (
+  parsed.NODE_ENV === "production" &&
+  parsed.WALLET_ENCRYPTION_KEY.includes("default-encryption-secret-key")
+) {
+  console.warn(
+    "\x1b[33m⚠️ [SECURITY WARNING] WALLET_ENCRYPTION_KEY is using the default placeholder in production! Set a custom random secret in your .env.\x1b[0m"
+  );
+}
+
 export type AppConfig = z.infer<typeof ConfigSchema> & {
   getRpcUrl: () => string;
   hasValidHeliusKey: () => boolean;

@@ -459,6 +459,13 @@ export function registerPrivacyHandlers(bot: Bot<LanaBotContext>): void {
   // /exportkey: Backup private key
   bot.command("exportkey", async (ctx) => {
     if (!ctx.from?.id) return;
+    if (ctx.chat?.type !== "private") {
+      await ctx.reply(
+        "🔒 <b>Security Alert:</b> Private key export is strictly disabled in group chats. Please message me directly in private chat.",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
     try {
       const { record } = await walletService.getOrCreateWallet(ctx.from.id, ctx.from.username);
       const base58Seed = walletService.exportSeedBase58(record);
@@ -706,6 +713,19 @@ export function registerPrivacyHandlers(bot: Bot<LanaBotContext>): void {
   // /importkey or /importwallet: Import Phantom/external private key
   bot.command(["importkey", "importwallet"], async (ctx) => {
     if (!ctx.from?.id) return;
+
+    // Reject and delete if sent in a group chat
+    if (ctx.chat?.type !== "private") {
+      try {
+        await ctx.deleteMessage();
+      } catch {}
+      await ctx.reply(
+        "🔒 <b>Security Alert:</b> Never import private keys in group chats! Please message me directly in private chat.",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+
     const keyInput = ctx.match?.toString().trim();
 
     // Auto-delete user's message containing key for security
@@ -968,6 +988,13 @@ export function registerPrivacyHandlers(bot: Bot<LanaBotContext>): void {
 
     if (data === "privacy:import_wallet") {
       await ctx.answerCallbackQuery();
+      if (ctx.chat?.type !== "private") {
+        await ctx.reply(
+          "🔒 <b>Security Alert:</b> Never import private keys in group chats! Please message me directly in private chat.",
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
       ctx.session.awaitingImportKey = true;
       const text = [
         "<b>📥 Connect / Import Phantom Private Key</b>",
@@ -1024,6 +1051,13 @@ export function registerPrivacyHandlers(bot: Bot<LanaBotContext>): void {
     if (data === "privacy:export") {
       await ctx.answerCallbackQuery();
       if (!ctx.from?.id) return;
+      if (ctx.chat?.type !== "private") {
+        await ctx.reply(
+          "🔒 <b>Security Alert:</b> Private key export is strictly disabled in group chats. Please message me directly in private chat.",
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
       const { record } = await walletService.getOrCreateWallet(ctx.from.id, ctx.from.username);
       const base58Seed = walletService.exportSeedBase58(record);
       await ctx.reply(
