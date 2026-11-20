@@ -136,7 +136,7 @@ flowchart TD
    
    # Lana AI
    LANA_API_KEY=your_lana_api_key
-   LANA_BASE_URL=https://lana-api.helius-experiments.com
+   LANA_BASE_URL=https://beta.helius-rpc.com/v1/lana/messages
    LANA_NETWORK=devnet
    
    # Helius Solana Privacy Rings

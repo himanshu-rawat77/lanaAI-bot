@@ -5,7 +5,7 @@ const ConfigSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   TELEGRAM_BOT_TOKEN: z.string().min(1, "TELEGRAM_BOT_TOKEN is required"),
   LANA_API_KEY: z.string().min(1, "LANA_API_KEY is required"),
-  LANA_BASE_URL: z.string().url().default("https://lana-api.helius-experiments.com"),
+  LANA_BASE_URL: z.string().url().default("https://beta.helius-rpc.com/v1/lana/messages"),
   LANA_MODEL_FAST: z.enum(["lana-fast", "lana-thinking"]).default("lana-fast"),
   LANA_MODEL_THINKING: z.enum(["lana-fast", "lana-thinking"]).default("lana-thinking"),
   LANA_MAX_TOKENS: z.coerce.number().int().min(1).max(8192).default(4096),

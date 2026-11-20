@@ -38,7 +38,7 @@ Edit `.env` with your credentials:
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) on Telegram |
 | `LANA_API_KEY` | Your Lana API invite (from Helius) |
-| `LANA_BASE_URL` | Use the host from your invite (default: `https://lana-api.helius-experiments.com`) |
+| `LANA_BASE_URL` | Use the host from your invite (default: `https://beta.helius-rpc.com/v1/lana/messages`) |
 
 Optional tuning:
 
@@ -52,7 +52,7 @@ Optional tuning:
 Before starting the bot, confirm the Lana API is reachable:
 
 ```bash
-curl https://lana-api.helius-experiments.com/health
+curl https://beta.helius-rpc.com/v1/lana/messages
 ```
 
 Expected response:
@@ -64,7 +64,7 @@ Expected response:
 Test your API key:
 
 ```bash
-curl -X POST "https://lana-api.helius-experiments.com/v1/messages" \
+curl -X POST "https://beta.helius-rpc.com/v1/lana/messages" \
   -H 'content-type: application/json' \
   -H "x-api-key: YOUR_LANA_KEY" \
   -d '{
