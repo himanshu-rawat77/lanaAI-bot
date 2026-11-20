@@ -8,6 +8,7 @@ import { AddressProfileService } from "./services/address-profile";
 import { registerCommandHandlers } from "./handlers/commands";
 import { registerMessageHandlers } from "./handlers/messages";
 import { registerInlineHandlers } from "./handlers/inline";
+import { registerPrivacyHandlers } from "./handlers/privacy";
 import { formatLanaError } from "./utils/lana-errors";
 
 export type LanaBotContext = Context & { session: BotSession };
@@ -34,6 +35,8 @@ export function createBot(): Bot<LanaBotContext> {
   );
   bot.use(createRateLimitMiddleware(limiter));
 
+  // Register command and message handlers
+  registerPrivacyHandlers(bot);
   registerCommandHandlers(bot, { lanaClient, addressProfileService });
   registerMessageHandlers(bot, { lanaClient, addressProfileService });
   registerInlineHandlers(bot, { lanaClient });

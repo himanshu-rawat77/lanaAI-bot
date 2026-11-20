@@ -6,6 +6,8 @@ import { looksLikeSolanaAddress } from "../utils/solana";
 import { LanaClient } from "../lana/client";
 import { fundFlowPrompt } from "../lana/prompts";
 import { handleLanaChat } from "./chat";
+import { walletService } from "../services/wallet";
+import { privacyService } from "../services/privacy";
 
 type BotContext = Context & { session: BotSession };
 
@@ -15,21 +17,53 @@ export function registerCommandHandlers(
 ): void {
   bot.command("start", async (ctx) => {
     ctx.session.chatMode = true;
+
+    let walletAddressText = "";
+    if (ctx.from?.id) {
+      try {
+        const { record, isNew } = await walletService.getOrCreateWallet(
+          ctx.from.id,
+          ctx.from.username
+        );
+        ctx.session.connectedWallet = record.publicKey;
+        walletAddressText = `\n🛡️ <b>Your Private Wallet:</b> <code>${escapeHtml(
+          record.publicKey
+        )}</code> ${isNew ? "(Newly Generated)" : ""}\n`;
+      } catch (err) {
+        console.warn("Wallet creation on /start notice:", err);
+      }
+    }
+
     const text = [
-      "<b>👋 Welcome to Lana Solana Bot</b>",
+      "<b>👋 Welcome to Lana Solana Intelligence & Privacy Bot</b>",
+      walletAddressText,
+      "Powered by Lana AI and Helius Solana Privacy Rings.",
       "",
-      "Ask me anything about Solana — wallets, tokens, prices, or on-chain activity.",
-      "No wallet required. Optional: <code>/connect &lt;address&gt;</code> so I can answer “my portfolio”.",
+      "<b>🔒 Confidential Payments (Privacy Rings):</b>",
+      "• <code>/wallet</code> — View your private wallet & balances",
+      "• <code>/switchwallet</code> — Switch active main wallet",
+      "• <code>/importkey &lt;base58&gt;</code> — Connect & import Phantom wallet",
+      "• <code>/deposit</code> — Shield SOL into the private pool",
+      "• <code>/send &lt;amount&gt; &lt;address|@user&gt;</code> — Confidential transfer",
+      "• <code>/balance</code> — Check encrypted shielded balance",
+      "• <code>/withdraw &lt;amount&gt; &lt;address&gt;</code> — Withdraw to public address",
+      "• <code>/exportkey</code> — Backup your private key seed",
       "",
-      "<b>Try</b>",
-      "• What is the current price of SOL?",
-      "• Who are the largest USDC holders?",
-      "• <code>/connect &lt;wallet&gt;</code> then “How did I do this week?”",
-      "• <code>/lookup &lt;address&gt;</code> for a reputation card",
-      "• <code>/tx &lt;signature&gt;</code> to explain a transaction"
+      "<b>🧠 Lana On-Chain AI Intelligence:</b>",
+      "• <code>/lookup &lt;address&gt;</code> — Reputation card & profile",
+      "• <code>/tx &lt;signature&gt;</code> — Decode & explain transaction",
+      "• <code>/flow &lt;address&gt;</code> — Fund flow summary",
+      "• <code>/chat</code> — Free-form conversational Solana analysis",
+      "• <code>/portfolio</code> — Summarize your wallet's activity",
+      "",
+      "Try asking me a question directly in chat!"
     ].join("\n");
 
-    await ctx.reply(text, { parse_mode: "HTML" });
+    const keyboard = new InlineKeyboard()
+      .text("🛡️ Open Wallet", "privacy:refresh")
+      .text("💬 Ask Lana", "chat:info");
+
+    await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
   });
 
   bot.command("lookup", async (ctx) => {
@@ -54,11 +88,28 @@ export function registerCommandHandlers(
       return;
     }
 
-    await ctx.reply("Decoding transaction...");
-    const tx = await deps.lanaClient.explainTransaction(signature);
-    await ctx.reply(formatTxExplanation(tx.summary, tx.tokenMovements, tx.riskNotes), {
-      parse_mode: "HTML"
-    });
+    await ctx.reply("Decoding transaction with Lana AI & Helius SPR...");
+    const [tx, shieldedEvents] = await Promise.all([
+      deps.lanaClient.explainTransaction(signature).catch(() => null),
+      privacyService.getShieldedTransactionEvents(signature).catch(() => null)
+    ]);
+
+    let privacyNotice = "";
+    if (shieldedEvents && (shieldedEvents.events?.length > 0 || shieldedEvents.length > 0)) {
+      const count = shieldedEvents.events?.length ?? shieldedEvents.length;
+      privacyNotice = `\n\n🛡️ <b>Helius Privacy Ring Event:</b>\n• Encrypted outputs/events: <code>${count}</code>\n• UTXO commitments settled confidentially.`;
+    }
+
+    if (tx) {
+      await ctx.reply(
+        formatTxExplanation(tx.summary + privacyNotice, tx.tokenMovements, tx.riskNotes),
+        { parse_mode: "HTML" }
+      );
+    } else if (privacyNotice) {
+      await ctx.reply(`<b>Transaction Summary</b>${privacyNotice}`, { parse_mode: "HTML" });
+    } else {
+      await ctx.reply("Could not retrieve transaction details. Please check the signature.");
+    }
   });
 
   bot.command("flow", async (ctx) => {
@@ -136,13 +187,44 @@ export function registerCommandHandlers(
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(
-      "Commands: /start, /chat, /connect, /disconnect, /lookup, /tx, /flow, /portfolio, /clear, /stopchat"
-    );
+    const text = [
+      "<b>🤖 Lana Bot Commands Guide</b>",
+      "",
+      "<b>🛡️ Privacy Rings & Payments:</b>",
+      "• <code>/wallet</code> — Manage private wallet & view public/private balances",
+      "• <code>/deposit [amount]</code> — Shield SOL into Privacy Ring",
+      "• <code>/send &lt;amount&gt; &lt;address|@username&gt;</code> — Confidential transfer",
+      "• <code>/balance</code> — View encrypted & public balance",
+      "• <code>/withdraw &lt;amount&gt; &lt;address&gt;</code> — Withdraw to public address",
+      "• <code>/exportkey</code> — Backup your secret seed",
+      "",
+      "<b>🧠 Lana AI On-Chain Intelligence:</b>",
+      "• <code>/chat [prompt]</code> — Ask Lana about tokens, prices, Solana programs",
+      "• <code>/lookup &lt;address&gt;</code> — Address profile, risk score & tags",
+      "• <code>/tx &lt;signature&gt;</code> — Explain transaction & token movements",
+      "• <code>/flow &lt;address&gt; [depth]</code> — Fund flow summary",
+      "• <code>/portfolio</code> — Summarize your connected wallet activity",
+      "• <code>/connect &lt;address&gt;</code> — Connect an external wallet",
+      "• <code>/disconnect</code> — Disconnect external wallet",
+      "• <code>/clear</code> — Clear chat conversation history",
+      "• <code>/stopchat</code> — Disable free-form chat mode"
+    ].join("\n");
+
+    await ctx.reply(text, { parse_mode: "HTML" });
   });
 
-  bot.on("callback_query:data", async (ctx) => {
+  bot.on("callback_query:data", async (ctx, next) => {
     const data = ctx.callbackQuery.data;
+
+    if (data === "chat:info") {
+      await ctx.answerCallbackQuery();
+      ctx.session.chatMode = true;
+      await ctx.reply(
+        "💬 <b>Lana Chat is active!</b> Type any question about Solana (e.g., 'What is the price of SOL?' or 'Explain Helius Privacy Rings').",
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
 
     if (data.startsWith("fu:")) {
       const index = Number(data.slice(3));
@@ -158,7 +240,7 @@ export function registerCommandHandlers(
     }
 
     if (!data.startsWith("flow:")) {
-      await ctx.answerCallbackQuery();
+      await next();
       return;
     }
 
